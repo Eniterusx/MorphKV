@@ -271,8 +271,8 @@ if __name__ == '__main__':
                     "dureader", "gov_report", "qmsum", "multi_news", "vcsum", "trec", "triviaqa", "samsum", "lsht", \
                     "passage_count", "passage_retrieval_en", "passage_retrieval_zh", "lcc", "repobench-p"]
     # we design specific prompt format and max generation length for each task, feel free to modify them to optimize model output
-    dataset2prompt = json.load(open("LongBench/config/dataset2prompt.json", "r"))
-    dataset2maxlen = json.load(open("LongBench/config/dataset2maxlen.json", "r"))
+    dataset2prompt = json.load(open("LongBench/config/dataset2prompt.json", "r", encoding="utf-8"))
+    dataset2maxlen = json.load(open("LongBench/config/dataset2maxlen.json", "r", encoding="utf-8"))
     # predict on each dataset
     if not os.path.exists("pred"):
         os.makedirs("pred")
@@ -285,19 +285,19 @@ if __name__ == '__main__':
         if args.ablation:
             if not os.path.exists("pred_mem"):
                 os.makedirs("pred_mem")
-            data = load_dataset('THUDM/LongBench', f"{dataset}", split='test')
+            data = load_dataset('THUDM/LongBench', f"{dataset}", split='test', trust_remote_code=True)
             if not os.path.exists(f"pred_mem/{model_name}"):
                 os.makedirs(f"pred_mem/{model_name}")
             out_path = f"pred_mem/{model_name}/{dataset}_ws{args.window_size}_mc{args.max_capacity}_morphkv_{not(args.no_morph)}_type_{args.morph_type}_len{args.len}.jsonl"
             logfile = f"pred_mem/{model_name}/{dataset}_ws{args.window_size}_mc{args.max_capacity}_morphkv_{not(args.no_morph)}_type_{args.morph_type}_len{args.len}.log"
         elif args.e:
-            data = load_dataset('THUDM/LongBench', f"{dataset}_e", split='test')
+            data = load_dataset('THUDM/LongBench', f"{dataset}_e", split='test', trust_remote_code=True)
             if not os.path.exists(f"pred_e/{model_name}"):
                 os.makedirs(f"pred_e/{model_name}")
             out_path = f"pred_e/{model_name}/{dataset}_ws{args.window_size}_mc{args.max_capacity}_morphkv_{not(args.no_morph)}_type_{args.morph_type}_len{args.len}.jsonl"
             logfile = f"pred_e/{model_name}/{dataset}_ws{args.window_size}_mc{args.max_capacity}_morphkv_{not(args.no_morph)}_type_{args.morph_type}_len{args.len}.log"
         else:
-            data = load_dataset('THUDM/LongBench', dataset, split='test')
+            data = load_dataset('THUDM/LongBench', dataset, split='test', trust_remote_code=True)
             if not os.path.exists(f"{pred_path}/{model_name}"):
                 os.makedirs(f"{pred_path}/{model_name}")
             out_path = f"{pred_path}/{model_name}/{dataset}_ws{args.window_size}_mc{args.max_capacity}_morphkv_{not(args.no_morph)}_type_{args.morph_type}_len{args.len}.jsonl"
