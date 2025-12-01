@@ -244,6 +244,7 @@ def load_model_and_tokenizer(path, model_name, device, args):
         from transformers import AutoModelForCausalLM, AutoConfig, AutoTokenizer
         tokenizer = AutoTokenizer.from_pretrained(path)
         model = AutoModelForCausalLM.from_pretrained(path, torch_dtype=torch.bfloat16).to(device)
+        tokenizer.model_max_length = 100000 # Suppress "Token indices sequence length is longer..." warning
     model = model.eval()
     
     return model, tokenizer

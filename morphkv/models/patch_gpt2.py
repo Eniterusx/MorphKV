@@ -182,7 +182,11 @@ class GPT2AttentionMorph(nn.Module):
         # Standard Causal Masking (if not cross attention and not already handled by morphkv entirely)
         if not self.is_cross_attention:
             query_length, key_length = query_states.size(-2), key_states.size(-2)
-            causal_mask = self.bias[:, :, key_length - query_length : key_length, :key_length]
+            if key_length > self.bias.shape[-1]:
+                 causal_mask = torch.tril(torch.ones((key_length, key_length), device=self.bias.device, dtype=torch.bool)).view(1, 1, key_length, key_length)
+                 causal_mask = causal_mask[:, :, key_length - query_length : key_length, :key_length]
+            else:
+                 causal_mask = self.bias[:, :, key_length - query_length : key_length, :key_length]
             mask_value = torch.finfo(attn_weights.dtype).min
             mask_value = torch.full([], mask_value, dtype=attn_weights.dtype, device=attn_weights.device)
             attn_weights = torch.where(causal_mask, attn_weights.to(attn_weights.dtype), mask_value)
@@ -305,6 +309,10 @@ def gpt2_model_forward(
         )
     if position_ids is None:
         position_ids = cache_position.unsqueeze(0)
+
+    # MorphKV: Clamp position_ids to avoid out of bounds for long sequences on GPT2
+    if hasattr(self.config, "max_position_embeddings"):
+        position_ids = position_ids.clamp(0, self.config.max_position_embeddings - 1)
 
     position_embeds = self.wpe(position_ids)
     hidden_states = inputs_embeds + position_embeds.to(inputs_embeds.device)
