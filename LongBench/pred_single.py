@@ -5,6 +5,10 @@ import json
 import transformers
 from transformers import AutoTokenizer, LlamaTokenizer, LlamaForCausalLM, AutoModelForCausalLM, AutoConfig
 
+import os
+import sys
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+
 from morphkv.monkeypatch import patch_morphkv
 print("Applying MorphKV patches...")
 patch_morphkv()
@@ -25,7 +29,7 @@ from pathlib import Path
 
 def parse_args(args=None):
     parser = argparse.ArgumentParser()
-    parser.add_argument('--model', type=str, default=None, choices=["phi4-unsloth","phi4","mistral","qwen2.5","llama3.1-8b-instruct","llama2-7b-chat-4k", "llama-2-7B-32k-instruct", "longchat-v1.5-7b-32k", "xgen-7b-8k", "internlm-7b-8k", "chatglm2-6b", "chatglm2-6b-32k", "chatglm3-6b-32k", "vicuna-v1.5-7b-16k"])
+    parser.add_argument('--model', type=str, default=None, choices=["phi4-unsloth","phi4","mistral","qwen2.5","llama3.1-8b-instruct","llama2-7b-chat-4k", "llama-2-7B-32k-instruct", "longchat-v1.5-7b-32k", "xgen-7b-8k", "internlm-7b-8k", "chatglm2-6b", "chatglm2-6b-32k", "chatglm3-6b-32k", "vicuna-v1.5-7b-16k", "gpt2"])
     parser.add_argument('--dataset', type=str, default=None)
     parser.add_argument('--pred_path', type=str, default="pred")
     parser.add_argument('--morph_type', type=str, default="max_fused")
@@ -60,6 +64,8 @@ def build_chat(tokenizer, prompt, model_name):
         prompt = header + f" ### Human: {prompt}\n###"
     elif "internlm" in model_name:
         prompt = f"<|User|>:{prompt}<eoh>\n<|Bot|>:"
+    elif "gpt2" in model_name:
+        prompt = f"User: {prompt}\nAssistant:"
     return prompt
 
 def post_process(response, model_name):
@@ -67,10 +73,13 @@ def post_process(response, model_name):
         response = response.strip().replace("Assistant:", "")
     elif "internlm" in model_name:
         response = response.split("<eoa>")[0]
+    elif "gpt2" in model_name:
+        response = response.strip().replace("Assistant:", "")
     return response
 
 def get_pred(data, max_length, max_gen, prompt_format, dataset, device, model_name, model2path, out_path, args):
-    device = torch.device(f'cuda')
+    # device = torch.device(f'cuda')
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     model, tokenizer = load_model_and_tokenizer(model2path[model_name], model_name, device, args)
     # setup_logging(queue)
     logger = logging.getLogger(__name__)
@@ -231,6 +240,10 @@ def load_model_and_tokenizer(path, model_name, device, args):
         
     elif "longchat" in model_name or "vicuna" in model_name:
         assert False, "Models unsupported\n"
+    elif "gpt2" in model_name:
+        from transformers import AutoModelForCausalLM, AutoConfig, AutoTokenizer
+        tokenizer = AutoTokenizer.from_pretrained(path)
+        model = AutoModelForCausalLM.from_pretrained(path, torch_dtype=torch.bfloat16).to(device)
     model = model.eval()
     
     return model, tokenizer
@@ -241,8 +254,8 @@ if __name__ == '__main__':
     # world_size = torch.cuda.device_count()
     # mp.set_start_method('spawn', force=True)
 
-    model2path = json.load(open("config/model2path.json", "r"))
-    model2maxlen = json.load(open("config/model2maxlen.json", "r"))
+    model2path = json.load(open("LongBench/config/model2path.json", "r"))
+    model2maxlen = json.load(open("LongBench/config/model2maxlen.json", "r"))
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     model_name = args.model
     pred_path = args.pred_path
@@ -258,8 +271,8 @@ if __name__ == '__main__':
                     "dureader", "gov_report", "qmsum", "multi_news", "vcsum", "trec", "triviaqa", "samsum", "lsht", \
                     "passage_count", "passage_retrieval_en", "passage_retrieval_zh", "lcc", "repobench-p"]
     # we design specific prompt format and max generation length for each task, feel free to modify them to optimize model output
-    dataset2prompt = json.load(open("config/dataset2prompt.json", "r"))
-    dataset2maxlen = json.load(open("config/dataset2maxlen.json", "r"))
+    dataset2prompt = json.load(open("LongBench/config/dataset2prompt.json", "r"))
+    dataset2maxlen = json.load(open("LongBench/config/dataset2maxlen.json", "r"))
     # predict on each dataset
     if not os.path.exists("pred"):
         os.makedirs("pred")

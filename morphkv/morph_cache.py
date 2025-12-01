@@ -5,7 +5,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import torch
 from packaging import version
 
-from transformers.utils import is_hqq_available, is_quanto_available, logging
+from transformers.utils import is_hqq_available, logging
 
 
 logger = logging.get_logger(__name__)

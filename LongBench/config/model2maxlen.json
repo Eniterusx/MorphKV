@@ -13,5 +13,6 @@
     "mixtral": 10000,
     "mistral": 32000,
     "phi4": 16000,
-    "phi4-unsloth": 128000
+    "phi4-unsloth": 128000,
+    "gpt2": 1024
 }
