@@ -3,7 +3,7 @@ import torch
 from torch import nn
 from transformers.cache_utils import Cache
 from transformers.models.gpt2.configuration_gpt2 import GPT2Config
-from transformers.modeling_outputs import BaseModelOutputWithPast
+from transformers.modeling_outputs import BaseModelOutputWithPastAndCrossAttentions
 from transformers.utils import logging
 from morphkv.morph_cache import MorphOffloadedCache
 
@@ -136,6 +136,9 @@ class GPT2AttentionMorph(nn.Module):
         query_heads = query_states.shape[1]
         key_heads = key_states.shape[1]
 
+        if past_key_value is None and "layer_past" in kwargs:
+            past_key_value = kwargs["layer_past"]
+
         if past_key_value is not None:
             cache_kwargs = {"cache_position": cache_position}
             key_states, value_states = past_key_value.update(
@@ -203,8 +206,28 @@ class GPT2AttentionMorph(nn.Module):
         attn_output = self.c_proj(attn_output)
         attn_output = self.resid_dropout(attn_output)
 
-        return attn_output, attn_weights
+        outputs = (attn_output, (key_states, value_states))
+        if output_attentions:
+            outputs += (attn_weights,)
 
+        return outputs
+
+
+
+def _update_causal_mask(attention_mask, input_tensor):
+    if attention_mask is None:
+        return None
+    
+    if attention_mask.dim() == 2:
+        # Expand to (batch, 1, 1, seq_len)
+        attention_mask = attention_mask[:, None, None, :]
+    
+    # Create additive mask: 1.0 -> 0.0, 0.0 -> min_dtype
+    dtype = input_tensor.dtype
+    min_dtype = torch.finfo(dtype).min
+    # attention_mask = (1.0 - attention_mask) * min_dtype
+    attention_mask = torch.where(attention_mask == 0, min_dtype, 0.0).to(dtype)
+    return attention_mask
 
 def gpt2_model_forward(
     self,
@@ -223,12 +246,13 @@ def gpt2_model_forward(
     output_hidden_states: Optional[bool] = None,
     return_dict: Optional[bool] = None,
     **kwargs,
-) -> Union[Tuple, BaseModelOutputWithPast]:
-
+) -> Union[Tuple, BaseModelOutputWithPastAndCrossAttentions]:
+    
     output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
     output_hidden_states = (
         output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
     )
+    use_cache = use_cache if use_cache is not None else self.config.use_cache
     use_cache = use_cache if use_cache is not None else self.config.use_cache
     return_dict = return_dict if return_dict is not None else self.config.use_return_dict
 
@@ -263,7 +287,7 @@ def gpt2_model_forward(
         if past_key_values is None:
             # Initialize MorphOffloadedCache instead of DynamicCache
             past_key_values = MorphOffloadedCache(self.config.num_hidden_layers)
-            return_legacy_cache = True # Treat as legacy for return structure if needed by calling code
+            return_legacy_cache = False # Treat as legacy for return structure if needed by calling code
         elif not isinstance(past_key_values, Cache):
             return_legacy_cache = True
             past_key_values = MorphOffloadedCache.from_legacy_cache(past_key_values, self.config.num_hidden_layers)
@@ -289,10 +313,8 @@ def gpt2_model_forward(
     if attention_mask is not None and attention_mask.ndim < 4:
         attention_mask = attention_mask.view(batch_size, -1)
     
-    # We use _update_causal_mask from the base class (assuming standard Transformers inheritance)
-    causal_mask = self._update_causal_mask(
-        attention_mask, inputs_embeds, cache_position, past_key_values, output_attentions
-    )
+    # Use local _update_causal_mask instead of calling it on self
+    causal_mask = _update_causal_mask(attention_mask, inputs_embeds)
 
     if self.config.add_cross_attention and encoder_hidden_states is not None:
         encoder_batch_size, encoder_sequence_length, _ = encoder_hidden_states.size()
@@ -315,6 +337,7 @@ def gpt2_model_forward(
     all_self_attentions = () if output_attentions else None
     all_cross_attentions = () if output_attentions and self.config.add_cross_attention else None
     all_hidden_states = () if output_hidden_states else None
+    presents = () if use_cache else None
 
     for i, block in enumerate(self.h):
         # Model parallel
@@ -349,7 +372,7 @@ def gpt2_model_forward(
 
             outputs = block(
                 hidden_states,
-                past_key_value=past_key_values,
+                layer_past=past_key_values,
                 cache_position=cache_position,
                 attention_mask=causal_mask,
                 head_mask=head_mask[i],
@@ -362,6 +385,8 @@ def gpt2_model_forward(
             )
 
         hidden_states = outputs[0]
+        if use_cache:
+            presents = presents + (outputs[1],)
 
         if output_attentions:
             all_self_attentions = all_self_attentions + (outputs[1],)
@@ -379,7 +404,15 @@ def gpt2_model_forward(
     if output_hidden_states:
         all_hidden_states = all_hidden_states + (hidden_states,)
 
-    past_key_values = past_key_values if use_cache else None
+
+
+    if use_cache:
+        # Return DynamicCache if available, otherwise legacy tuple
+        if isinstance(past_key_values, Cache):
+            past_key_values = past_key_values
+        else:
+            past_key_values = presents
+
     if return_legacy_cache and past_key_values is not None:
          past_key_values = past_key_values.to_legacy_cache()
 
@@ -390,9 +423,77 @@ def gpt2_model_forward(
             if v is not None
         )
 
-    return BaseModelOutputWithPast(
+    return BaseModelOutputWithPastAndCrossAttentions(
         last_hidden_state=hidden_states,
         past_key_values=past_key_values,
         hidden_states=all_hidden_states,
         attentions=all_self_attentions,
+        cross_attentions=all_cross_attentions,
     )
+
+def gpt2_block_forward(
+    self,
+    hidden_states: Optional[Tuple[torch.FloatTensor]],
+    layer_past: Optional[Tuple[torch.Tensor]] = None,
+    attention_mask: Optional[torch.FloatTensor] = None,
+    head_mask: Optional[torch.FloatTensor] = None,
+    encoder_hidden_states: Optional[torch.Tensor] = None,
+    encoder_attention_mask: Optional[torch.FloatTensor] = None,
+    use_cache: Optional[bool] = False,
+    output_attentions: Optional[bool] = False,
+    cache_position: Optional[torch.LongTensor] = None,
+    query_cache: Optional[List] = None,
+    **kwargs,
+):
+    residual = hidden_states
+    hidden_states = self.ln_1(hidden_states)
+    attn_outputs = self.attn(
+        hidden_states,
+        layer_past=layer_past,
+        attention_mask=attention_mask,
+        head_mask=head_mask,
+        use_cache=use_cache,
+        output_attentions=output_attentions,
+        cache_position=cache_position,
+        query_cache=query_cache,
+        **kwargs
+    )
+    attn_output = attn_outputs[0]  # output_attn: a, present, (attentions)
+    outputs = attn_outputs[1:]
+    # residual connection
+    hidden_states = attn_output + residual
+
+
+
+    if encoder_hidden_states is not None:
+        if not hasattr(self, "crossattention"):
+            raise ValueError(
+                f"If `encoder_hidden_states` are passed, {self} has to be instantiated with cross-attention layers by setting `config.add_cross_attention=True`"
+            )
+        residual = hidden_states
+        hidden_states = self.ln_cross_attn(hidden_states)
+        cross_attn_outputs = self.crossattention(
+            hidden_states,
+            attention_mask=attention_mask,
+            head_mask=head_mask,
+            encoder_hidden_states=encoder_hidden_states,
+            encoder_attention_mask=encoder_attention_mask,
+            output_attentions=output_attentions,
+        )
+        attn_output = cross_attn_outputs[0]
+        # residual connection
+        hidden_states = residual + attn_output
+        outputs = outputs + cross_attn_outputs[2:]
+
+    residual = hidden_states
+    hidden_states = self.ln_2(hidden_states)
+    feed_forward_hidden_states = self.mlp(hidden_states)
+    # residual connection
+    hidden_states = residual + feed_forward_hidden_states
+
+    if use_cache:
+        outputs = (hidden_states,) + outputs
+    else:
+        outputs = (hidden_states,) + outputs[1:]
+
+    return outputs

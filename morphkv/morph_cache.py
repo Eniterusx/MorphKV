@@ -83,6 +83,8 @@ class DynamicCache(Cache):
         Support for backwards-compatible `past_key_value` length, e.g. `len(past_key_value)`. This value corresponds
         to the number of layers in the model.
         """
+        if self.get_seq_length() == 0:
+            return 0
         return len(self.key_cache)
 
     def cleanup(
@@ -131,9 +133,9 @@ class DynamicCache(Cache):
                 if self.attn_cache[layer_idx] != []: self.cache_size['attn_wts'] = max(self.cache_size['attn_wts'], self.attn_cache[layer_idx].shape[2]) #len(self.attn_cache) * self.attn_cache[0].shape[0] * self.attn_cache[0].shape[1] * self.attn_cache[0].shape[2] * self.attn_cache[0].shape[3])    
         # Profiling memory
         if layer_idx==0:
-            # if self.key_cache[layer_idx] != []: self.cache_size['key'] = max(self.cache_size['key'],self.key_cache[layer_idx].shape[2])#len(self.key_cache) * self.key_cache[0].shape[0] * self.key_cache[0].shape[1] * self.key_cache[0].shape[2] * self.key_cache[0].shape[3])
-            # if self.value_cache[layer_idx] != []: self.cache_size['value'] = max(self.cache_size['value'], self.value_cache[layer_idx].shape[2]) #len(self.value_cache) * self.value_cache[0].shape[0] * self.value_cache[0].shape[1] * self.value_cache[0].shape[2] * self.value_cache[0].shape[3])
-            # if self.attn_cache[layer_idx] != []: self.cache_size['attn_wts'] = max(self.cache_size['attn_wts'], self.attn_cache[layer_idx].shape[2]) #len(self.attn_cache) * self.attn_cache[0].shape[0] * self.attn_cache[0].shape[1] * self.attn_cache[0].shape[2] * self.attn_cache[0].shape[3])
+            if self.key_cache[layer_idx] != []: self.cache_size['key'] = max(self.cache_size['key'],self.key_cache[layer_idx].shape[2])#len(self.key_cache) * self.key_cache[0].shape[0] * self.key_cache[0].shape[1] * self.key_cache[0].shape[2] * self.key_cache[0].shape[3])
+            if self.value_cache[layer_idx] != []: self.cache_size['value'] = max(self.cache_size['value'], self.value_cache[layer_idx].shape[2]) #len(self.value_cache) * self.value_cache[0].shape[0] * self.value_cache[0].shape[1] * self.value_cache[0].shape[2] * self.value_cache[0].shape[3])
+            if self.attn_cache[layer_idx] != []: self.cache_size['attn_wts'] = max(self.cache_size['attn_wts'], self.attn_cache[layer_idx].shape[2]) #len(self.attn_cache) * self.attn_cache[0].shape[0] * self.attn_cache[0].shape[1] * self.attn_cache[0].shape[2] * self.attn_cache[0].shape[3])
             if not self.prefill:
                 self.cache_size['len'] = LEN
             else:

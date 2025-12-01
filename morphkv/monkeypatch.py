@@ -7,7 +7,7 @@ from morphkv.models.patch_mistral import MistralAttentionMorph, MistralFlashAtte
 from morphkv.models.patch_llama import LlamaAttentionMorph, LlamaFlashAttention2Morph, llama_model_forward
 from morphkv.models.patch_qwen2 import Qwen2AttentionMorph, Qwen2FlashAttention2Morph, qwen2_model_forward
 from morphkv.models.patch_phi3 import Phi3AttentionMorph, Phi3FlashAttention2Morph, phi3_model_forward
-from morphkv.models.patch_gpt2 import GPT2AttentionMorph, gpt2_model_forward
+from morphkv.models.patch_gpt2 import GPT2AttentionMorph, gpt2_model_forward, gpt2_block_forward
 
 from morphkv.morph_cache import MorphOffloadedCache
 from morphkv.gen_utils import morph_sample
@@ -68,7 +68,16 @@ def patch_phi3():
 
 def patch_gpt2():
     transformers.models.gpt2.modeling_gpt2.GPT2Attention = GPT2AttentionMorph
+    transformers.models.gpt2.modeling_gpt2.GPT2SdpaAttention = GPT2AttentionMorph
+    transformers.models.gpt2.modeling_gpt2.GPT2FlashAttention2 = GPT2AttentionMorph
     transformers.models.gpt2.modeling_gpt2.GPT2Model.forward = gpt2_model_forward
+    transformers.models.gpt2.modeling_gpt2.GPT2Block.forward = gpt2_block_forward
+
+    transformers.models.gpt2.modeling_gpt2.GPT2_ATTENTION_CLASSES = {
+        "eager": GPT2AttentionMorph,
+        "flash_attention_2": GPT2AttentionMorph,
+        "sdpa": GPT2AttentionMorph,
+    }
 
 
 def patch_cache():
