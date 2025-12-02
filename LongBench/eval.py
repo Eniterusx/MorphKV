@@ -15,6 +15,9 @@ from metrics import (
     code_sim_score,
 )
 
+def perplexity_score(prediction, ground_truth, **kwargs):
+    return prediction / 100.0
+
 dataset2metric = {
     "narrativeqa": qa_f1_score,
     "qasper": qa_f1_score,
@@ -37,6 +40,9 @@ dataset2metric = {
     "passage_retrieval_zh": retrieval_zh_score,
     "lcc": code_sim_score,
     "repobench-p": code_sim_score,
+    "wikitext-103": perplexity_score,
+    "wikitext-2": perplexity_score,
+    "tinystories": perplexity_score,
 }
 
 def parse_args(args=None):
@@ -110,7 +116,10 @@ if __name__ == '__main__':
         with open(f"{path}{filename}", "r", encoding="utf-8") as f:
             for line in f:
                 data = json.loads(line)
-                predictions.append(data["pred"])
+                if dataset in ["wikitext-103", "wikitext-2", "tinystories"] and "perplexity" in data:
+                    predictions.append(data["perplexity"])
+                else:
+                    predictions.append(data["pred"])
                 answers.append(data["answers"])
                 all_classes = data["all_classes"]
                 if "length" in data:

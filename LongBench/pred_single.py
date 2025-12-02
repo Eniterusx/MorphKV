@@ -4,6 +4,7 @@ import torch
 import json
 import transformers
 from transformers import AutoTokenizer, LlamaTokenizer, LlamaForCausalLM, AutoModelForCausalLM, AutoConfig
+from torchmetrics.text import Perplexity
 
 import os
 import sys
@@ -172,8 +173,41 @@ def get_pred(data, max_length, max_gen, prompt_format, dataset, device, model_na
         #     tb.print_stack()
         #     exit
         #     pred = "ERROR"
+        
+        perplexity = 0.0
+        if dataset in ["wikitext-103", "wikitext-2", "tinystories"]:
+            try:
+                ans = json_obj["answers"][0]
+                full_text = prompt + ans
+                encodings = tokenizer(full_text, return_tensors="pt")
+                input_ids = encodings.input_ids.to(device)
+                max_pos = getattr(model.config, "max_position_embeddings", 1024)
+                if input_ids.shape[1] > max_pos:
+                    input_ids = input_ids[:, :max_pos]
+                
+                target_ids = input_ids.clone()
+                prompt_ids = tokenizer(prompt, return_tensors="pt").input_ids
+                prompt_len = prompt_ids.shape[1]
+                if prompt_len < input_ids.shape[1]:
+                    target_ids[:, :prompt_len] = -100
+                else:
+                    target_ids[:, :] = -100
+                
+                with torch.no_grad():
+                    outputs = model(input_ids, labels=target_ids)
+                    logits = outputs.logits
+                    
+                    # Shift logits and labels for next-token prediction
+                    shift_logits = logits[..., :-1, :].contiguous()
+                    shift_labels = target_ids[..., 1:].contiguous()
+                    
+                    perp = Perplexity(ignore_index=-100).to(device)
+                    perplexity = perp(shift_logits, shift_labels).item()
+            except Exception as e:
+                print(f"PPL calc error: {e}")
+        print(f"Perplexity: {perplexity}")
         with open(out_path, "a", encoding="utf-8") as f:
-            json.dump({"pred": pred, "answers": json_obj["answers"], "all_classes": json_obj["all_classes"], "length": json_obj["length"]}, f, ensure_ascii=False)
+            json.dump({"pred": pred, "answers": json_obj["answers"], "all_classes": json_obj["all_classes"], "length": json_obj["length"], "perplexity": perplexity}, f, ensure_ascii=False)
             f.write('\n')
         if "prof" in args.morph_type:
             break
@@ -297,6 +331,34 @@ if __name__ == '__main__':
                 os.makedirs(f"pred_e/{model_name}")
             out_path = f"pred_e/{model_name}/{dataset}_ws{args.window_size}_mc{args.max_capacity}_morphkv_{not(args.no_morph)}_type_{args.morph_type}_len{args.len}.jsonl"
             logfile = f"pred_e/{model_name}/{dataset}_ws{args.window_size}_mc{args.max_capacity}_morphkv_{not(args.no_morph)}_type_{args.morph_type}_len{args.len}.log"
+        elif dataset in ["wikitext-103", "wikitext-2", "tinystories"]:
+            if dataset == "wikitext-103":
+                data = load_dataset("wikitext", "wikitext-103-v1", split="test")
+            elif dataset == "wikitext-2":
+                data = load_dataset("wikitext", "wikitext-2-v1", split="test")
+            elif dataset == "tinystories":
+                data = load_dataset("roneneldan/TinyStories", split="validation")
+            
+            new_data = []
+            for item in data:
+                text = item['text']
+                if len(text) < 50: continue
+                split_point = len(text) // 2
+                context = text[:split_point]
+                answer = text[split_point:]
+                new_data.append({
+                    "context": context,
+                    "input": "",
+                    "answers": [answer],
+                    "length": len(text),
+                    "all_classes": None
+                })
+            data = new_data
+
+            if not os.path.exists(f"{pred_path}/{model_name}"):
+                os.makedirs(f"{pred_path}/{model_name}")
+            out_path = f"{pred_path}/{model_name}/{dataset}_ws{args.window_size}_mc{args.max_capacity}_morphkv_{not(args.no_morph)}_type_{args.morph_type}_len{args.len}.jsonl"
+            logfile = f"{pred_path}/{model_name}/{dataset}_ws{args.window_size}_mc{args.max_capacity}_morphkv_{not(args.no_morph)}_type_{args.morph_type}_len{args.len}.log"
         else:
             data = load_dataset('THUDM/LongBench', dataset, split='test', trust_remote_code=True)
             if not os.path.exists(f"{pred_path}/{model_name}"):

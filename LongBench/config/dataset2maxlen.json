@@ -19,5 +19,8 @@
     "passage_retrieval_en": 32,
     "passage_retrieval_zh": 32,
     "lcc": 64,
-    "repobench-p": 64
+    "repobench-p": 64,
+    "wikitext-103": 512,
+    "wikitext-2": 512,
+    "tinystories": 512
 }

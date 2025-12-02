@@ -12,6 +12,7 @@ dependencies = [
     "psutil",
     "packaging",
     "ninja",
+    "torchmetrics",
 ]
 
 [tool.uv.extra-build-dependencies]
