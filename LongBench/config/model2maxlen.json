@@ -1,5 +1,5 @@
 {
-    "llama3.1-8b-instruct":128000,
+    "llama3.1-8b-instruct": 128000,
     "llama2-7b-chat-4k": 3500,
     "longchat-v1.5-7b-32k": 31500,
     "xgen-7b-8k": 7500,
@@ -14,5 +14,7 @@
     "mistral": 32000,
     "phi4": 16000,
     "phi4-unsloth": 128000,
-    "gpt2": 512
+    "gpt2": 512,
+    "smolm1.7B": 2048,
+    "smolm360M": 2048
 }

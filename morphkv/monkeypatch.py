@@ -8,6 +8,7 @@ from morphkv.models.patch_llama import LlamaAttentionMorph, LlamaFlashAttention2
 from morphkv.models.patch_qwen2 import Qwen2AttentionMorph, Qwen2FlashAttention2Morph, qwen2_model_forward
 from morphkv.models.patch_phi3 import Phi3AttentionMorph, Phi3FlashAttention2Morph, phi3_model_forward
 from morphkv.models.patch_gpt2 import GPT2AttentionMorph, gpt2_model_forward, gpt2_block_forward
+from morphkv.models.patch_smolm import SmolLMAttentionMorph, SmolLMFlashAttention2Morph, smolm_model_forward
 
 from morphkv.morph_cache import MorphOffloadedCache
 from morphkv.gen_utils import morph_sample
@@ -79,6 +80,18 @@ def patch_gpt2():
         "sdpa": GPT2AttentionMorph,
     }
 
+def patch_smolm():
+    # SmolLM uses Llama architecture, so we patch Llama classes
+    transformers.models.llama.modeling_llama.LlamaAttention = SmolLMAttentionMorph
+    transformers.models.llama.modeling_llama.LlamaFlashAttention2 = SmolLMFlashAttention2Morph
+    transformers.models.llama.modeling_llama.LlamaModel.forward = smolm_model_forward
+    
+    transformers.models.llama.modeling_llama.LLAMA_ATTENTION_CLASSES = {
+        "eager": SmolLMAttentionMorph,
+        "flash_attention_2": SmolLMFlashAttention2Morph,
+        "sdpa": SmolLMAttentionMorph,
+    }
+
 
 def patch_cache():
 
@@ -107,6 +120,7 @@ def patch_morphkv():
 
     # patch_mistral()
     # patch_llama()
+    patch_smolm()
     # patch_qwen2()
     # patch_phi3()
     patch_gpt2()

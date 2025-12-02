@@ -29,7 +29,7 @@ from pathlib import Path
 
 def parse_args(args=None):
     parser = argparse.ArgumentParser()
-    parser.add_argument('--model', type=str, default=None, choices=["phi4-unsloth","phi4","mistral","qwen2.5","llama3.1-8b-instruct","llama2-7b-chat-4k", "llama-2-7B-32k-instruct", "longchat-v1.5-7b-32k", "xgen-7b-8k", "internlm-7b-8k", "chatglm2-6b", "chatglm2-6b-32k", "chatglm3-6b-32k", "vicuna-v1.5-7b-16k", "gpt2"])
+    parser.add_argument('--model', type=str, default=None, choices=["phi4-unsloth","phi4","mistral","qwen2.5","llama3.1-8b-instruct","llama2-7b-chat-4k", "llama-2-7B-32k-instruct", "longchat-v1.5-7b-32k", "xgen-7b-8k", "internlm-7b-8k", "chatglm2-6b", "chatglm2-6b-32k", "chatglm3-6b-32k", "vicuna-v1.5-7b-16k", "gpt2", "smolm1.7B", "smolm360M"])
     parser.add_argument('--dataset', type=str, default=None)
     parser.add_argument('--pred_path', type=str, default="pred")
     parser.add_argument('--morph_type', type=str, default="max_fused")
@@ -200,7 +200,7 @@ def load_model_and_tokenizer(path, model_name, device, args):
     if "chatglm" in model_name or "internlm" in model_name or "xgen" in model_name:
         tokenizer = AutoTokenizer.from_pretrained(path, trust_remote_code=True)
         model = AutoModelForCausalLM.from_pretrained(path, trust_remote_code=True, torch_dtype=torch.bfloat16).to(device)
-    elif "llama" in model_name or "qwen" in model_name or "mistral" in model_name or "phi4" in model_name:
+    elif "llama" in model_name or "qwen" in model_name or "mistral" in model_name or "phi4" in model_name or "smolm" in model_name:
         # replace_llama_attn_with_flash_attn()
         # tokenizer = LlamaTokenizer.from_pretrained(path)
         # model = LlamaForCausalLM.from_pretrained(path, torch_dtype=torch.bfloat16).to(device)
@@ -213,7 +213,7 @@ def load_model_and_tokenizer(path, model_name, device, args):
                 warning_flag = False
                 break
         assert warning_flag==False, f"Transformers version {transformers_version} is not compatible with MorphKV. MorphKV is tested with Transformers version {version_list}. Please install this by: pip install transformers==4.45.0"
-        cache_dir = "/home/shared/model_chkpts/"
+        cache_dir = "model_chkpts/"
         os.makedirs(cache_dir, exist_ok=True)
 
         # Load the model and tokenizer
